@@ -110,7 +110,7 @@ fn run_query(workspace: &Path, mut input: impl Read) -> Result<()> {
         QueryOutput::Rows => {
             serde_json::to_value(rows).context("Failed to serialize query rows")?
         }
-        QueryOutput::IndexJsonld => clearhead_core::graph::frame_index(&rows)
+        QueryOutput::IndexJsonld => clearhead_graphd::graph::frame_index(&rows)
             .context("Query result does not satisfy the index contract")?,
     };
     println!("{}", serde_json::to_string(&response)?);
@@ -124,7 +124,7 @@ fn export_jsonld(mut input: impl Read) -> Result<()> {
         .context("Failed to read domain model from stdin")?;
     let model: clearhead_core::DomainModel =
         serde_json::from_str(&model_json).context("Invalid domain model JSON")?;
-    let jsonld = clearhead_core::graph::serialize_domain_to_jsonld(&model)
+    let jsonld = clearhead_graphd::graph::serialize_domain_to_jsonld(&model)
         .context("Failed to serialize JSON-LD")?;
     println!("{jsonld}");
     Ok(())
@@ -132,14 +132,14 @@ fn export_jsonld(mut input: impl Read) -> Result<()> {
 
 fn workspace_graph_name(
     workspace: &clearhead_core::workspace::store::load::Workspace,
-) -> clearhead_core::graph::GraphName {
-    clearhead_core::graph::GraphName::NamedNode(clearhead_core::graph::workspace_graph_uri(
+) -> clearhead_graphd::graph::GraphName {
+    clearhead_graphd::graph::GraphName::NamedNode(clearhead_graphd::graph::workspace_graph_uri(
         &workspace.effective_id(),
     ))
 }
 
 fn load_workspace_at_path_into_store(
-    store: &clearhead_core::graph::Store,
+    store: &clearhead_graphd::graph::Store,
     workspace_path: &Path,
 ) -> Result<()> {
     if !workspace_path.exists() {
@@ -159,7 +159,7 @@ fn load_workspace_at_path_into_store(
         })?;
     let graph_name = workspace_graph_name(&workspace);
 
-    clearhead_core::graph::insert_workspace_metadata(store, &workspace, graph_name.clone())
+    clearhead_graphd::graph::insert_workspace_metadata(store, &workspace, graph_name.clone())
         .map_err(|e| {
             anyhow::anyhow!(
                 "Failed to insert workspace metadata for {}: {}",
@@ -168,7 +168,7 @@ fn load_workspace_at_path_into_store(
             )
         })?;
     let model = clearhead_core::DomainModel::from(workspace);
-    clearhead_core::graph::load_domain_model(store, &model, None, graph_name).map_err(|e| {
+    clearhead_graphd::graph::load_domain_model(store, &model, None, graph_name).map_err(|e| {
         anyhow::anyhow!(
             "Failed to insert workspace {} into store: {}",
             workspace_path.display(),
@@ -184,17 +184,17 @@ fn run_workspace_raw_query(
     sparql: &str,
     config: &WorkspaceConfig,
 ) -> Result<Vec<HashMap<String, String>>> {
-    let store = clearhead_core::graph::create_store()
+    let store = clearhead_graphd::graph::create_store()
         .map_err(|e| anyhow::anyhow!("Failed to create store: {}", e))?;
 
     let primary = clearhead_core::workspace::store::load::Workspace::load(data_dir)
         .map_err(|e| anyhow::anyhow!("Failed to load workspace: {}", e))?;
     let graph_name = workspace_graph_name(&primary);
 
-    clearhead_core::graph::insert_workspace_metadata(&store, &primary, graph_name.clone())
+    clearhead_graphd::graph::insert_workspace_metadata(&store, &primary, graph_name.clone())
         .map_err(|e| anyhow::anyhow!("Failed to insert workspace metadata: {}", e))?;
     let model = clearhead_core::DomainModel::from(primary);
-    clearhead_core::graph::load_domain_model(&store, &model, Some(config), graph_name)
+    clearhead_graphd::graph::load_domain_model(&store, &model, Some(config), graph_name)
         .map_err(|e| anyhow::anyhow!("Failed to load domain model: {}", e))?;
 
     for path_str in &config.additional_workspaces {
@@ -204,7 +204,7 @@ fn run_workspace_raw_query(
         }
     }
 
-    clearhead_core::graph::query_raw(&store, sparql)
+    clearhead_graphd::graph::query_raw(&store, sparql)
         .map_err(|e| anyhow::anyhow!("SPARQL query failed: {}", e))
 }
 

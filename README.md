@@ -1,8 +1,9 @@
 # clearhead-graphd
 
-Standalone graph/query process for ClearHead. The first implementation is a
-one-shot binary; the process boundary is intentional even though graphd still
-uses `clearhead-core`'s graph module internally.
+Standalone graph/query process and graph-runtime library for ClearHead. The
+first process implementation is one-shot; all Oxigraph, RDF, SPARQL, Turtle,
+shape-validation, and JSON-LD functionality is encapsulated in this crate.
+`clearhead-core` is a graph-neutral domain/workspace dependency.
 
 The boundary rule is simple: **the CLI speaks plain JSON; graphd owns JSON-LD**.
 
