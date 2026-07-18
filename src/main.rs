@@ -20,8 +20,11 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Execute a one-shot graph query and print JSON rows.
+    /// Execute a one-shot graph query.
     Query,
+
+    /// Convert a JSON-encoded domain model from stdin to canonical JSON-LD.
+    ExportJsonld,
 }
 
 /// Versioned request read from stdin. Keeping the SPARQL out of argv avoids
@@ -34,6 +37,16 @@ struct QueryRequest {
     sparql: String,
     #[serde(default)]
     config: GraphConfig,
+    #[serde(default)]
+    output: QueryOutput,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum QueryOutput {
+    #[default]
+    Rows,
+    IndexJsonld,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -61,6 +74,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Query => run_query(&cli.workspace, std::io::stdin()),
+        Command::ExportJsonld => export_jsonld(std::io::stdin()),
     }
 }
 
@@ -92,8 +106,27 @@ fn run_query(workspace: &Path, mut input: impl Read) -> Result<()> {
 
     let config = WorkspaceConfig::from(request.config);
     let rows = run_workspace_raw_query(workspace, &request.sparql, &config)?;
-    let json = serde_json::to_string(&rows).context("Failed to serialize query rows")?;
-    println!("{}", json);
+    let response = match request.output {
+        QueryOutput::Rows => {
+            serde_json::to_value(rows).context("Failed to serialize query rows")?
+        }
+        QueryOutput::IndexJsonld => clearhead_core::graph::frame_index(&rows)
+            .context("Query result does not satisfy the index contract")?,
+    };
+    println!("{}", serde_json::to_string(&response)?);
+    Ok(())
+}
+
+fn export_jsonld(mut input: impl Read) -> Result<()> {
+    let mut model_json = String::new();
+    input
+        .read_to_string(&mut model_json)
+        .context("Failed to read domain model from stdin")?;
+    let model: clearhead_core::DomainModel =
+        serde_json::from_str(&model_json).context("Invalid domain model JSON")?;
+    let jsonld = clearhead_core::graph::serialize_domain_to_jsonld(&model)
+        .context("Failed to serialize JSON-LD")?;
+    println!("{jsonld}");
     Ok(())
 }
 

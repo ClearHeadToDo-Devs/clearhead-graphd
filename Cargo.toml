@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
-clearhead_core = { path = "../clearhead-core", version = "0.2.0" }
+clearhead_core = { path = "../clearhead-core", version = "0.2.0", default-features = false, features = ["graph"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tracing = "0.1.44"
