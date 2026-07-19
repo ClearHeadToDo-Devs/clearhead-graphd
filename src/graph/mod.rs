@@ -2,8 +2,8 @@
 //!
 //! This module owns the "put it in / take it out / ask it questions" layer:
 //! [`insert`] loads domain objects as RDF triples, [`query`] runs SPARQL and
-//! reconstructs domain objects, [`serialize`] writes Turtle for archival, and
-//! [`jsonld`] produces canonical JSON-LD interchange.
+//! reconstructs domain objects, and [`jsonld`] produces canonical JSON-LD
+//! interchange.
 //!
 //! # Named Graph Architecture
 //!
@@ -22,12 +22,10 @@
 //! that have no real workspace UUID, use [`TRANSIENT_GRAPH_URI`] — it is a
 //! valid named graph URI so `GRAPH ?g` patterns still find data.
 //!
-//! `GraphName::DefaultGraph` is **only** legitimate in two places:
-//!
-//! | Call site | Why DefaultGraph is correct |
-//! |-----------|-----------------------------|
-//! | [`load_actions_into_store`] | Single-use store written directly to Turtle (archival).  Never queried via SPARQL. |
-//! | [`serialize`] module internals | Same — transient TTL-output stores. |
+//! `GraphName::DefaultGraph` is **only** legitimate inside
+//! [`load_turtle_into_graph`], which parses hand-crafted TTL into a throwaway
+//! temporary store's default graph before re-inserting the quads under a real
+//! named graph.  That store is never queried via SPARQL.
 //!
 //! Everywhere else — CLI query paths, tests, multi-workspace loading — use a
 //! named graph.  Tests that load into `DefaultGraph` and query via SPARQL are
@@ -102,25 +100,22 @@
 //! // now query with query_raw / query_action_ids — they use union default graph
 //! ```
 //!
-//! Using `GraphName::DefaultGraph` in tests is only correct when testing the
-//! archive/serialization path (`load_actions_into_store` / `serialize` module).
+//! Using `GraphName::DefaultGraph` in tests is only correct for the transient
+//! reparse buffer inside [`load_turtle_into_graph`].
 //!
 //! # Submodules
 //!
 //! - [`insert`]    — domain model → RDF triples; loads into named graph
 //! - [`query`]     — SPARQL query execution and result extraction
 //! - [`jsonld`]    — canonical compact JSON-LD export
-//! - [`serialize`] — Turtle serialization for archival (uses DefaultGraph internally)
 
 pub mod insert;
 pub mod jsonld;
 pub mod query;
-pub mod serialize;
 pub mod shape;
 
 pub use insert::{
-    insert_workspace_metadata, load_actions_into_store, load_domain_model, load_turtle,
-    load_turtle_into_graph,
+    insert_workspace_metadata, load_domain_model, load_turtle_into_graph,
 };
 pub use jsonld::{serialize_domain_to_jsonld, serialize_workspace_to_jsonld};
 pub use oxigraph::model::GraphName;
@@ -128,10 +123,6 @@ pub use oxigraph::store::Store;
 pub use query::{
     build_raw_where_query, build_where_query, query_action_ids, query_raw,
     validate_actions_vocabulary,
-};
-pub use serialize::{
-    dump_store_to_turtle, serialize_acts_to_turtle, serialize_closed_acts_to_turtle,
-    serialize_open_acts_to_turtle,
 };
 pub use shape::{INDEX_REQUIRED, frame_index};
 

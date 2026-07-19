@@ -200,31 +200,6 @@ pub fn insert_workspace_metadata(
     Ok(())
 }
 
-/// Insert a slice of `Action`s directly into the store.
-///
-/// Used by the archive command to populate a store before serializing to
-/// `archive.ttl`.  Quad idempotence means calling this with already-present
-/// actions is safe.
-pub fn load_actions_into_store(store: &Store, actions: &[Action]) -> Result<()> {
-    // Archive serialization stores always use the default graph — they are
-    // transient single-use stores written to TTL, not persistent query stores.
-    let graph = GraphName::DefaultGraph;
-    for action in actions {
-        insert_action(store, action, &graph)?;
-    }
-    Ok(())
-}
-
-/// Load RDF Turtle content into the store's default graph.
-///
-/// Reverse of `dump_store_to_turtle` — useful for loading external `.ttl`
-/// files or round-trip testing.
-pub fn load_turtle(store: &Store, content: &str) -> Result<()> {
-    store
-        .load_from_reader(RdfFormat::Turtle, content.as_bytes())
-        .map_err(|e| GraphError::Syntax(e.to_string()))
-}
-
 /// Load RDF Turtle content into a specific named graph.
 ///
 /// Parses via a temporary store (DefaultGraph), then re-inserts quads into
