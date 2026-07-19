@@ -168,6 +168,7 @@ struct NamedQuery {
 
 const BUILT_IN_INDEX_QUERIES: &[(&str, &str)] = &[
     ("agenda", include_str!("queries/index/agenda.sparql")),
+    ("chain", include_str!("queries/index/chain.sparql")),
     ("default", include_str!("queries/index/default.sparql")),
     ("unscheduled", include_str!("queries/index/unscheduled.sparql")),
     ("weekly", include_str!("queries/index/weekly.sparql")),
