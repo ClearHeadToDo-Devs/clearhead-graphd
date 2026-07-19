@@ -7,6 +7,12 @@ shape-validation, and JSON-LD functionality is encapsulated in this crate.
 
 The boundary rule is simple: **the CLI speaks plain JSON; graphd owns JSON-LD**.
 
+The output contract is layered: this README is the **wire** contract (invocation and
+request/response envelope), [`docs/query_contract.md`](docs/query_contract.md) is the
+**semantic** contract (the principles the output obeys), and
+[`docs/jsonld_export_contract.md`](docs/jsonld_export_contract.md) is the **field**
+contract (exact node types and required fields).
+
 ## Query contract (version 1)
 
 Invocation:
