@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, anyhow};
 use chrono::Utc;
 use clearhead_core::WorkspaceConfig;
+use oxigraph::io::{JsonLdProfileSet, RdfFormat, RdfSerializer};
 use clearhead_core::workspace::store::load::Workspace;
 use tracing::debug;
 
@@ -38,6 +39,7 @@ pub enum Format {
     Json,
     Ndjson,
     Jsonld,
+    Turtle,
 }
 
 fn default_rows_format() -> Format {
@@ -45,6 +47,14 @@ fn default_rows_format() -> Format {
         Format::Table
     } else {
         Format::Json
+    }
+}
+
+fn default_graph_format() -> Format {
+    if std::io::stdout().is_terminal() {
+        Format::Table
+    } else {
+        Format::Jsonld
     }
 }
 
@@ -187,6 +197,10 @@ const BUILT_IN_INDEX_QUERIES: &[(&str, &str)] = &[
 
 const BUILT_IN_TREE_QUERIES: &[(&str, &str)] = &[
     ("work-map", include_str!("queries/tree/work-map.sparql")),
+];
+
+const BUILT_IN_GRAPH_QUERIES: &[(&str, &str)] = &[
+    ("dependencies", include_str!("queries/graph/dependencies.sparql")),
 ];
 
 const BUILT_IN_QUERIES: &[(&str, &str)] = &[
@@ -363,6 +377,7 @@ pub fn run_index(
         }
         Format::Ndjson => emit_ndjson(nodes),
         Format::Jsonld => write_stdout(&serde_json::to_string_pretty(&doc).context("serialize")?),
+        Format::Turtle => anyhow::bail!("--format turtle requires a CONSTRUCT graph query"),
     }
 }
 
@@ -402,6 +417,43 @@ pub fn run_tree(
         Format::Json => write_stdout(&serde_json::to_string_pretty(&tree).context("serialize")?),
         Format::Ndjson => anyhow::bail!("--format ndjson is not defined for tree queries; use json"),
         Format::Jsonld => anyhow::bail!("--format jsonld is not defined for tree queries; use json"),
+        Format::Turtle => anyhow::bail!("--format turtle requires a CONSTRUCT graph query"),
+    }
+}
+
+/// A named graph view backed by a complete standard CONSTRUCT query.
+pub fn run_graph(
+    cx: &QueryContext,
+    name: Option<&str>,
+    format: Option<Format>,
+) -> anyhow::Result<()> {
+    let name = name.unwrap_or("dependencies");
+    let sparql = resolve_typed_queries(cx, "graph")
+        .remove(name)
+        .map(|q| q.sparql)
+        .or_else(|| {
+            BUILT_IN_GRAPH_QUERIES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, sparql)| sparql.to_string())
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "No graph query named '{name}'. Save a .sparql file to \
+                 <config>/queries/graph/ or <workspace>/.clearhead/queries/graph/"
+            )
+        })?;
+
+    let store = build_store(&cx.workspace, &cx.config)?;
+    let triples = graph::query_graph(&store, &inject_params(&sparql, None, None))
+        .map_err(|e| anyhow!("SPARQL graph query failed: {e}"))?;
+    match format.unwrap_or_else(default_graph_format) {
+        Format::Table => emit_graph_summary(&triples),
+        Format::Jsonld => emit_rdf(&triples, RdfFormat::JsonLd { profile: JsonLdProfileSet::empty() }),
+        Format::Turtle => emit_rdf(&triples, RdfFormat::Turtle),
+        Format::Json | Format::Ndjson => {
+            anyhow::bail!("graph queries require an RDF format: use jsonld or turtle")
+        }
     }
 }
 
@@ -433,6 +485,9 @@ pub fn list(cx: &QueryContext) -> anyhow::Result<()> {
     for (name, _) in BUILT_IN_TREE_QUERIES {
         table.add_row(vec![Cell::new(name), Cell::new("tree"), Cell::new("built-in")]);
     }
+    for (name, _) in BUILT_IN_GRAPH_QUERIES {
+        table.add_row(vec![Cell::new(name), Cell::new("graph"), Cell::new("built-in")]);
+    }
     let mut typed = scan_all_typed_queries(cx);
     typed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     for (type_name, name, q) in &typed {
@@ -462,6 +517,13 @@ pub fn show(cx: &QueryContext, name: &str) -> anyhow::Result<()> {
                 .find(|(n, _)| *n == name)
                 .map(|(_, sparql)| sparql.to_string())
         })
+        .or_else(|| resolve_typed_queries(cx, "graph").remove(name).map(|q| q.sparql))
+        .or_else(|| {
+            BUILT_IN_GRAPH_QUERIES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, sparql)| sparql.to_string())
+        })
         .or_else(|| resolve_named_queries(cx).remove(name).map(|q| q.sparql))
         .ok_or_else(|| {
             anyhow!("No query named '{name}'. Use `graphd query list` to see available.")
@@ -485,10 +547,29 @@ fn emit_rows(rows: &[HashMap<String, String>], format: Option<Format>) -> anyhow
             write_stdout_lines(&lines)
         }
         Format::Table => emit_table(rows),
-        Format::Jsonld => anyhow::bail!(
-            "--format jsonld requires a shaped query family such as `query index`"
+        Format::Jsonld | Format::Turtle => anyhow::bail!(
+            "RDF formats require a shaped graph query such as `query graph`"
         ),
     }
+}
+
+fn emit_graph_summary(triples: &[oxigraph::model::Triple]) -> anyhow::Result<()> {
+    use std::collections::HashSet;
+    let subjects: HashSet<_> = triples.iter().map(|triple| triple.subject.to_string()).collect();
+    let predicates: HashSet<_> = triples.iter().map(|triple| triple.predicate.to_string()).collect();
+    write_stdout(&format!(
+        "{} triples, {} subjects, {} predicates",
+        triples.len(), subjects.len(), predicates.len()
+    ))
+}
+
+fn emit_rdf(triples: &[oxigraph::model::Triple], format: RdfFormat) -> anyhow::Result<()> {
+    let mut serializer = RdfSerializer::from_format(format).for_writer(Vec::new());
+    for triple in triples {
+        serializer.serialize_triple(triple).context("serialize RDF triple")?;
+    }
+    let bytes = serializer.finish().context("finish RDF serialization")?;
+    write_stdout_raw(&bytes)
 }
 
 fn emit_tree(tree: &serde_json::Value) -> anyhow::Result<()> {

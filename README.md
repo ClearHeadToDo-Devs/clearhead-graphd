@@ -16,6 +16,7 @@ Run a built-in index view:
 ```sh
 clearhead-graphd --workspace /path/to/project query index unscheduled
 clearhead-graphd --workspace /path/to/project query tree work-map
+clearhead-graphd --workspace /path/to/project query graph dependencies --format jsonld
 ```
 
 Inspect and run registered queries:

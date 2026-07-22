@@ -60,11 +60,11 @@ flat bindings as nested JSON or an indented terminal tree. The built-in
 
 A graph is a standard `CONSTRUCT` query. Its returned RDF graph is the contract:
 subjects, predicates, and objects preserve their ontology meaning without being
-flattened into an application-specific row schema. Machine output is JSON-LD or
-another explicit RDF serialization; terminal output is a human summary.
-
-The graph family's exact output profile is finalized by its first real
-`CONSTRUCT` consumer rather than speculative configuration.
+flattened into an application-specific row schema. Machine output defaults to
+JSON-LD; explicit Turtle is available for standard RDF interchange, and a
+terminal receives a triple/subject/predicate summary. A `SELECT` saved in the
+graph family fails clearly. The built-in `dependencies.sparql` proves the family
+over actions, states, charter membership, and predecessor edges.
 
 ## Unrestricted queries
 

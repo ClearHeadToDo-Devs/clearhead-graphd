@@ -4,7 +4,7 @@ use super::{
     ACTIONS_ACTION, ACTIONS_NS, BFO_NS, CCO_IS_SUCCESSOR_OF, CCO_NS, CCO_PLAN, CCO_PRESCRIBES,
     CCO_STATUS_PROP, GraphError, Result, Store,
 };
-use oxigraph::model::Term;
+use oxigraph::model::{Term, Triple};
 use oxigraph::sparql::{QueryResults, SparqlEvaluator};
 use std::collections::HashMap;
 
@@ -16,6 +16,31 @@ pub fn query_action_ids(store: &Store, sparql: &str) -> Result<Vec<String>> {
 
 pub fn query_raw(store: &Store, sparql: &str) -> Result<Vec<Row>> {
     execute_select_rows(store, sparql)
+}
+
+/// Execute a standard CONSTRUCT/DESCRIBE query and return its RDF triples.
+pub fn query_graph(store: &Store, sparql: &str) -> Result<Vec<Triple>> {
+    let mut prepared = SparqlEvaluator::new()
+        .parse_query(sparql)
+        .map_err(|e| GraphError::Query(e.to_string()))?;
+    if prepared.dataset().is_default_dataset() {
+        prepared.dataset_mut().set_default_graph_as_union();
+    }
+    match prepared
+        .on_store(store)
+        .execute()
+        .map_err(|e| GraphError::Query(e.to_string()))?
+    {
+        QueryResults::Graph(triples) => triples
+            .map(|triple| triple.map_err(|error| GraphError::Query(error.to_string())))
+            .collect(),
+        QueryResults::Solutions(_) => Err(GraphError::Query(
+            "graph query family requires CONSTRUCT or DESCRIBE, not SELECT".into(),
+        )),
+        QueryResults::Boolean(_) => Err(GraphError::Query(
+            "graph query family requires CONSTRUCT or DESCRIBE, not ASK".into(),
+        )),
+    }
 }
 
 pub fn build_raw_where_query(where_clause: &str) -> String {

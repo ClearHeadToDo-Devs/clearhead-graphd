@@ -48,6 +48,12 @@ enum QueryKind {
         #[arg(long, value_enum)]
         format: Option<clearhead_graphd::query::Format>,
     },
+    /// Run a named CONSTRUCT graph view (default: "dependencies").
+    Graph {
+        name: Option<String>,
+        #[arg(long, value_enum)]
+        format: Option<clearhead_graphd::query::Format>,
+    },
     /// Run a saved freeform query by name.
     Named {
         name: String,
@@ -114,6 +120,7 @@ fn run_query_command(workspace: &Path, args: QueryArgs) -> Result<()> {
             format,
         } => query::run_index(&cx, name.as_deref(), target.as_deref(), format),
         QueryKind::Tree { name, format } => query::run_tree(&cx, name.as_deref(), format),
+        QueryKind::Graph { name, format } => query::run_graph(&cx, name.as_deref(), format),
         QueryKind::Named {
             name,
             status,

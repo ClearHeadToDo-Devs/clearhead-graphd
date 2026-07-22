@@ -121,7 +121,7 @@ pub use jsonld::{serialize_domain_to_jsonld, serialize_workspace_to_jsonld};
 pub use oxigraph::model::GraphName;
 pub use oxigraph::store::Store;
 pub use query::{
-    build_raw_where_query, build_where_query, query_action_ids, query_raw,
+    build_raw_where_query, build_where_query, query_action_ids, query_graph, query_raw,
     validate_actions_vocabulary,
 };
 pub use shape::{INDEX_REQUIRED, TREE_REQUIRED, frame_index, frame_tree};
