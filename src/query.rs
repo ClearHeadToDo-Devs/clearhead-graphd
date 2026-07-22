@@ -2,10 +2,10 @@
 //! not a private protocol for the CLI. Resolves a query (raw SPARQL, a named
 //! query, or a named index view) against a workspace and renders the result.
 //!
-//! This is a faithful relocation of the logic that used to live in the CLI: the
-//! CLI now forwards to it, but graphd is usable directly
-//! (`graphd query index unscheduled --workspace .`) with no CLI installed.
-//! Context is just the workspace path plus config self-discovered from core.
+//! This is the public query surface for direct consumers
+//! (`clearhead-graphd --workspace . query index unscheduled`). Context is just
+//! the workspace path plus config self-discovered from core; no CLI proxy is
+//! involved.
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
@@ -63,6 +63,14 @@ fn default_index_format() -> Format {
         Format::Table
     } else {
         Format::Ndjson
+    }
+}
+
+fn default_tree_format() -> Format {
+    if std::io::stdout().is_terminal() {
+        Format::Table
+    } else {
+        Format::Json
     }
 }
 
@@ -337,8 +345,8 @@ pub fn run_named(
     emit_rows(&rows, format)
 }
 
-/// A named index view. `target` supplies ?TARGET_ACTION for chain-style views;
-/// the CLI resolves a fuzzy action to its canonical IRI before forwarding.
+/// A named index view. `target` supplies a canonical IRI for ?TARGET_ACTION
+/// in chain-style views.
 pub fn run_index(
     cx: &QueryContext,
     name: Option<&str>,
@@ -412,7 +420,7 @@ pub fn run_tree(
     let tree = graph::frame_tree(&rows)
         .map_err(|e| anyhow!("Query result does not satisfy the tree contract: {e}"))?;
 
-    match format.unwrap_or_else(default_index_format) {
+    match format.unwrap_or_else(default_tree_format) {
         Format::Table => emit_tree(&tree),
         Format::Json => write_stdout(&serde_json::to_string_pretty(&tree).context("serialize")?),
         Format::Ndjson => anyhow::bail!("--format ndjson is not defined for tree queries; use json"),

@@ -48,6 +48,28 @@ fn work_map_emits_nested_charter_and_action_hierarchy() {
 }
 
 #[test]
+fn tree_pipe_defaults_to_nested_json() {
+    let env = TestEnv::new();
+    env.with_workspace_identity().write_actions(
+        "next.actions",
+        "[ ] action #01900000-0000-7000-8000-000000000105\n",
+    );
+
+    let output = env
+        .command()
+        .args(["query", "tree", "work-map"])
+        .output()
+        .expect("run tree query with captured stdout");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let tree: serde_json::Value = serde_json::from_slice(&output.stdout).expect("nested JSON");
+    assert!(tree.is_array(), "tree machine output must be a JSON array: {tree}");
+}
+
+#[test]
 fn work_map_resolves_charter_parent_by_alias() {
     let env = TestEnv::new();
     env.with_workspace_identity();

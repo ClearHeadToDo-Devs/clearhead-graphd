@@ -63,9 +63,8 @@ The semantic rules for index output are documented in
 [`docs/query_contract.md`](docs/query_contract.md). Exact JSON-LD fields are in
 [`docs/jsonld_export_contract.md`](docs/jsonld_export_contract.md).
 
-The `clearhead` CLI forwards its query commands to this same public command
-interface with inherited stdio. Set `CLEARHEAD_GRAPHD` to select a particular
-graphd executable.
+Clients invoke this public command interface directly; the `clearhead` CLI does
+not proxy graph queries.
 
 ## Domain JSON to JSON-LD export
 

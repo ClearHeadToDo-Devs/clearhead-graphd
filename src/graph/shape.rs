@@ -7,9 +7,9 @@
 //!
 //! Row order is the query's ORDER BY, preserved as `@graph` array position;
 //! sort keys ride along as node properties so ordering survives an RDF
-//! round-trip. `index` is the first shape: ordered, display-labeled,
-//! locator-bearing entries, each addressable by canonical `@id`. Future
-//! shapes (`table` for aggregates, `graph` for networks) slot alongside.
+//! round-trip. The implemented families are `index` for addressable ordered
+//! rows, `tree` for canonical parent-linked hierarchies, and `graph` for
+//! ontology-preserving CONSTRUCT results.
 
 use super::{ACTIONS_NS, BFO_NS, CCO_NS, GraphError, Result, WORKSPACE_NS, XSD_NS};
 use serde_json::{Map, Value, json};
