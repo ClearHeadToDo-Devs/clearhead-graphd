@@ -51,10 +51,11 @@ workspace plus configured `additional_workspaces` into separate named graphs.
 
 ### Output
 
-Output is destination-aware. A terminal defaults to a table; a pipe defaults
-to structured JSON. Index views validate the index projection and emit the
-canonical JSON-LD document when structured output is selected. Explicit
-`--format table` and `--format json` override detection.
+Output is destination-aware. A terminal defaults to a human rendering. A pipe
+uses the query family's machine projection: index views emit NDJSON, while
+unrestricted `SELECT` queries emit JSON row arrays. Index views validate their
+addressable-row contract before any projection. Explicit `--format table`,
+`json`, `ndjson`, and `jsonld` override detection where supported.
 
 The semantic rules for index output are documented in
 [`docs/query_contract.md`](docs/query_contract.md). Exact JSON-LD fields are in

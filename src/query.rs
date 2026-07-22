@@ -8,7 +8,7 @@
 //! Context is just the workspace path plus config self-discovered from core.
 
 use std::collections::HashMap;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, anyhow};
@@ -30,18 +30,29 @@ pub struct QueryContext {
     pub config_dir: PathBuf,
 }
 
-/// Output format. Terminal defaults to a table; a pipe defaults to JSON.
+/// Explicit output format. Query families choose their own machine default:
+/// ordinary SELECT rows use JSON, while the index family uses NDJSON.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Format {
     Table,
     Json,
+    Ndjson,
+    Jsonld,
 }
 
-fn default_format() -> Format {
+fn default_rows_format() -> Format {
     if std::io::stdout().is_terminal() {
         Format::Table
     } else {
         Format::Json
+    }
+}
+
+fn default_index_format() -> Format {
+    if std::io::stdout().is_terminal() {
+        Format::Table
+    } else {
+        Format::Ndjson
     }
 }
 
@@ -337,14 +348,17 @@ pub fn run_index(
     let rows = graph::query_raw(&store, &inject_params(&sparql, None, target))
         .map_err(|e| anyhow!("SPARQL query failed: {e}"))?;
 
-    match format.unwrap_or_else(default_format) {
-        Format::Json => {
-            let doc = graph::frame_index(&rows)
-                .map_err(|e| anyhow!("Query result does not satisfy the index contract: {e}"))?;
-            println!("{}", serde_json::to_string_pretty(&doc).context("serialize")?);
-            Ok(())
-        }
+    let doc = graph::frame_index(&rows)
+        .map_err(|e| anyhow!("Query result does not satisfy the index contract: {e}"))?;
+    let nodes = doc["@graph"].as_array().expect("frame_index always emits an @graph array");
+
+    match format.unwrap_or_else(default_index_format) {
         Format::Table => emit_table(&rows),
+        Format::Json => {
+            write_stdout(&serde_json::to_string_pretty(nodes).context("serialize")?)
+        }
+        Format::Ndjson => emit_ndjson(nodes),
+        Format::Jsonld => write_stdout(&serde_json::to_string_pretty(&doc).context("serialize")?),
     }
 }
 
@@ -382,8 +396,7 @@ pub fn list(cx: &QueryContext) -> anyhow::Result<()> {
             Cell::new(q.source.to_string()),
         ]);
     }
-    println!("{table}");
-    Ok(())
+    write_stdout(&table.to_string())
 }
 
 pub fn show(cx: &QueryContext, name: &str) -> anyhow::Result<()> {
@@ -400,8 +413,7 @@ pub fn show(cx: &QueryContext, name: &str) -> anyhow::Result<()> {
         .ok_or_else(|| {
             anyhow!("No query named '{name}'. Use `graphd query list` to see available.")
         })?;
-    print!("{sparql}");
-    Ok(())
+    write_stdout_raw(sparql.as_bytes())
 }
 
 // =============================================================================
@@ -409,16 +421,51 @@ pub fn show(cx: &QueryContext, name: &str) -> anyhow::Result<()> {
 // =============================================================================
 
 fn emit_rows(rows: &[HashMap<String, String>], format: Option<Format>) -> anyhow::Result<()> {
-    if rows.is_empty() {
-        println!("(no results)");
-        return Ok(());
-    }
-    match format.unwrap_or_else(default_format) {
-        Format::Json => {
-            println!("{}", serde_json::to_string_pretty(rows).context("serialize")?);
-            Ok(())
+    match format.unwrap_or_else(default_rows_format) {
+        Format::Json => write_stdout(&serde_json::to_string_pretty(rows).context("serialize")?),
+        Format::Ndjson => {
+            let lines = rows
+                .iter()
+                .map(serde_json::to_string)
+                .collect::<Result<Vec<_>, _>>()
+                .context("serialize")?;
+            write_stdout_lines(&lines)
         }
         Format::Table => emit_table(rows),
+        Format::Jsonld => anyhow::bail!(
+            "--format jsonld requires a shaped query family such as `query index`"
+        ),
+    }
+}
+
+fn emit_ndjson(nodes: &[serde_json::Value]) -> anyhow::Result<()> {
+    let lines = nodes
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<Result<Vec<_>, _>>()
+        .context("serialize")?;
+    write_stdout_lines(&lines)
+}
+
+fn write_stdout(value: &str) -> anyhow::Result<()> {
+    let mut bytes = value.as_bytes().to_vec();
+    bytes.push(b'\n');
+    write_stdout_raw(&bytes)
+}
+
+fn write_stdout_lines(lines: &[String]) -> anyhow::Result<()> {
+    let mut output = lines.join("\n").into_bytes();
+    if !lines.is_empty() {
+        output.push(b'\n');
+    }
+    write_stdout_raw(&output)
+}
+
+fn write_stdout_raw(bytes: &[u8]) -> anyhow::Result<()> {
+    match std::io::stdout().lock().write_all(bytes) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(error) => Err(error).context("write stdout"),
     }
 }
 
@@ -427,8 +474,7 @@ fn emit_table(rows: &[HashMap<String, String>]) -> anyhow::Result<()> {
     use std::collections::BTreeSet;
 
     if rows.is_empty() {
-        println!("(no results)");
-        return Ok(());
+        return write_stdout("(no results)");
     }
     let columns: Vec<String> = rows
         .iter()
@@ -455,8 +501,7 @@ fn emit_table(rows: &[HashMap<String, String>]) -> anyhow::Result<()> {
                 .collect::<Vec<_>>(),
         );
     }
-    println!("{table}");
-    Ok(())
+    write_stdout(&table.to_string())
 }
 
 #[cfg(test)]
