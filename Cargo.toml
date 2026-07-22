@@ -25,5 +25,8 @@ uuid = "1.0"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 
 [dev-dependencies]
+assert_cmd = "2.0"
 chrono = "0.4"
 jsonschema = "0.18"
+predicates = "3.1"
+tempfile = "3.0"
