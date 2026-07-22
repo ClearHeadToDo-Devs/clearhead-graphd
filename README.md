@@ -1,91 +1,83 @@
 # clearhead-graphd
 
-Standalone graph/query process and graph-runtime library for ClearHead. The
-first process implementation is one-shot; all Oxigraph, RDF, SPARQL, Turtle,
-shape-validation, and JSON-LD functionality is encapsulated in this crate.
-`clearhead-core` is a graph-neutral domain/workspace dependency.
+Standalone graph/query tool and graph-runtime library for ClearHead. It owns
+Oxigraph, RDF materialization, SPARQL execution, query registration, shape
+validation, and JSON-LD serialization. `clearhead-core` remains the
+graph-neutral domain/workspace substrate.
 
-The boundary rule is simple: **the CLI speaks plain JSON; graphd owns JSON-LD**.
+The first implementation is deliberately one-shot rather than a resident
+daemon. It discovers ClearHead configuration through core and can be installed
+and used without the `clearhead` CLI.
 
-The output contract is layered: this README is the **wire** contract (invocation and
-request/response envelope), [`docs/query_contract.md`](docs/query_contract.md) is the
-**semantic** contract (the principles the output obeys), and
-[`docs/jsonld_export_contract.md`](docs/jsonld_export_contract.md) is the **field**
-contract (exact node types and required fields).
+## Query interface
 
-## Query contract (version 1)
-
-Invocation:
+Run a built-in index view:
 
 ```sh
-clearhead-graphd --workspace <workspace-root> query
+clearhead-graphd --workspace /path/to/project query index unscheduled
 ```
 
-The client writes one JSON request to stdin:
+Inspect and run registered queries:
 
-```json
-{
-  "version": 1,
-  "sparql": "SELECT ?s WHERE { ?s ?p ?o }",
-  "config": {
-    "tag_hierarchies": {},
-    "additional_workspaces": []
-  },
-  "output": "rows"
-}
+```sh
+clearhead-graphd --workspace /path/to/project query list
+clearhead-graphd --workspace /path/to/project query show agenda
+clearhead-graphd --workspace /path/to/project query named high-priority
 ```
 
-`config`, its fields, and `output` may be omitted. `output` defaults to `rows`.
-Unknown request fields and unsupported versions are rejected so contract drift
-is visible.
+Run ad-hoc SPARQL or a raw `WHERE` clause:
 
-### Plain row output
-
-With `"output":"rows"`, stdout contains a JSON array of string-valued binding
-maps:
-
-```json
-[{"s":"urn:uuid:..."}]
+```sh
+clearhead-graphd --workspace /path/to/project query raw \
+  'SELECT ?name WHERE { ?action rdfs:label ?name }'
+clearhead-graphd --workspace /path/to/project query raw \
+  --where '?action rdfs:label ?name'
 ```
 
-This is used by raw and aggregate queries. Human table formatting remains the
-CLI's concern.
+Use `query <command> --help` for parameters such as `--status`, `--target`, and
+`--format`.
 
-### Index JSON-LD output
+### Query discovery
 
-With `"output":"index_jsonld"`, graphd validates the query projection against
-the index contract and emits the canonical JSON-LD document:
+Queries are resolved from these layers, with the more local definition taking
+precedence:
 
-```json
-{"@context": {"id":"@id"}, "@graph": [{"id":"urn:uuid:..."}]}
-```
+- graphd's built-in registry
+- the user's ClearHead config directory under `queries/`
+- `<workspace>/.clearhead/queries/`
 
-The CLI may print that document directly or treat its `@graph` array as plain
-JSON when rendering a table; it does not construct the JSON-LD context itself.
+Index queries live in an `index/` subdirectory. graphd loads the primary
+workspace plus configured `additional_workspaces` into separate named graphs.
+
+### Output
+
+Output is destination-aware. A terminal defaults to a table; a pipe defaults
+to structured JSON. Index views validate the index projection and emit the
+canonical JSON-LD document when structured output is selected. Explicit
+`--format table` and `--format json` override detection.
+
+The semantic rules for index output are documented in
+[`docs/query_contract.md`](docs/query_contract.md). Exact JSON-LD fields are in
+[`docs/jsonld_export_contract.md`](docs/jsonld_export_contract.md).
+
+The `clearhead` CLI forwards its query commands to this same public command
+interface with inherited stdio. Set `CLEARHEAD_GRAPHD` to select a particular
+graphd executable.
 
 ## Domain JSON to JSON-LD export
 
-Invocation:
+`export-jsonld` is the remaining stdin protocol. It reads a JSON-encoded
+`DomainModel` and writes canonical JSON-LD:
 
 ```sh
-clearhead-graphd export-jsonld
+clearhead-graphd export-jsonld < domain-model.json
 ```
 
-stdin is a JSON-encoded `DomainModel`; stdout is canonical JSON-LD. This keeps
-filtering and ordinary JSON/domain handling available to CLI commands while
-making graphd the sole process that exports graph-shaped data.
+Warnings and errors go to stderr. A failed command exits non-zero, and callers
+must not consume stdout.
 
-## Process behavior
+## Development
 
-Warnings and errors go to stderr. A failed request exits non-zero and stdout
-must not be consumed. The CLI locates the executable as `clearhead-graphd` on
-`PATH`; set `CLEARHEAD_GRAPHD` to an explicit executable path when packaging or
-testing.
-
-## Current scope
-
-- load the primary workspace and resolved additional workspaces
-- apply tag hierarchy configuration while materializing the graph
-- execute raw, named, index, and chain SPARQL supplied by clients
-- return plain binding rows or graphd-framed index JSON-LD
-- export JSON domain models as canonical JSON-LD
+```sh
+cargo test --manifest-path clearhead-graphd/Cargo.toml
+```
