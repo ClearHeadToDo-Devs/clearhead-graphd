@@ -21,7 +21,7 @@ run through that family:
 
 ```text
 queries/index/agenda.sparql
-queries/tree/charter-actions.sparql
+queries/tree/work-map.sparql
 queries/graph/dependencies.sparql
 ```
 
@@ -49,11 +49,12 @@ performing read → act-by-id → re-read loops.
 ### `tree`
 
 A tree is an ordered `SELECT` result of identifiable nodes with a hierarchical
-identity edge. Each node guarantees `id` and `parent`; the root has no parent.
-Display and locator fields may be required as the first tree consumer is
-implemented. The query remains responsible for membership and ordering;
-graphd validates the family and projects the flat bindings as nested JSON or an
-indented terminal tree.
+identity edge. Every row guarantees `id`, `name`, and `kind`; non-root rows also
+bind `parent` to the canonical `id` of another row in the same result. Duplicate
+identities, missing parents, self-parenting, and cycles fail validation. The
+query remains responsible for membership and ordering; graphd projects the
+flat bindings as nested JSON or an indented terminal tree. The built-in
+`work-map.sparql` proves the family over charters and actions.
 
 ### `graph`
 
@@ -62,9 +63,8 @@ subjects, predicates, and objects preserve their ontology meaning without being
 flattened into an application-specific row schema. Machine output is JSON-LD or
 another explicit RDF serialization; terminal output is a human summary.
 
-Tree and graph establish the family convention now; their exact minimum field
-profiles are finalized by their first real consumers rather than speculative
-configuration.
+The graph family's exact output profile is finalized by its first real
+`CONSTRUCT` consumer rather than speculative configuration.
 
 ## Unrestricted queries
 

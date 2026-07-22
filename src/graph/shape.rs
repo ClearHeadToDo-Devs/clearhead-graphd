@@ -32,6 +32,10 @@ pub const INDEX_REQUIRED: &[&str] = &[
 /// Terms framed as JSON numbers rather than stringified literals.
 const INTEGER_TERMS: &[&str] = &["source_line", "priority"];
 
+/// Identity and display terms every tree node carries. `parent` is optional
+/// only for roots; when present it must identify another row in the result.
+pub const TREE_REQUIRED: &[&str] = &["id", "name", "kind"];
+
 /// Frame ordered SELECT bindings into the index JSON-LD document.
 ///
 /// Empty bindings frame as an empty `@graph` — one payload shape always.
@@ -39,6 +43,81 @@ pub fn frame_index(rows: &[Row]) -> Result<Value> {
     validate_contract(rows, INDEX_REQUIRED)?;
     let nodes: Vec<Value> = rows.iter().map(index_node).collect::<Result<_>>()?;
     Ok(json!({ "@context": index_context(), "@graph": nodes }))
+}
+
+/// Validate flat, ordered tree bindings and project them into nested JSON.
+/// The input remains the direct result of a portable SELECT query; nesting is
+/// a graphd output projection, not query syntax.
+pub fn frame_tree(rows: &[Row]) -> Result<Value> {
+    validate_contract(rows, TREE_REQUIRED)?;
+
+    let mut positions = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        let id = &row["id"];
+        if positions.insert(id.clone(), index).is_some() {
+            return Err(GraphError::Contract(format!("duplicate tree id: {id}")));
+        }
+    }
+
+    let mut children = vec![Vec::new(); rows.len()];
+    let mut roots = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        match row.get("parent") {
+            None => roots.push(index),
+            Some(parent) if parent == &row["id"] => {
+                return Err(GraphError::Contract(format!("tree node {parent} is its own parent")));
+            }
+            Some(parent) => {
+                let parent_index = positions.get(parent).copied().ok_or_else(|| {
+                    GraphError::Contract(format!(
+                        "tree node {} references missing parent {parent}",
+                        row["id"]
+                    ))
+                })?;
+                children[parent_index].push(index);
+            }
+        }
+    }
+    if !rows.is_empty() && roots.is_empty() {
+        return Err(GraphError::Contract("tree has no root (cycle detected)".into()));
+    }
+
+    let mut visiting = vec![false; rows.len()];
+    let mut emitted = vec![false; rows.len()];
+    let trees = roots
+        .into_iter()
+        .map(|root| build_tree_node(root, rows, &children, &mut visiting, &mut emitted))
+        .collect::<Result<Vec<_>>>()?;
+    if emitted.iter().any(|seen| !seen) {
+        return Err(GraphError::Contract("tree contains a disconnected cycle".into()));
+    }
+    Ok(Value::Array(trees))
+}
+
+fn build_tree_node(
+    index: usize,
+    rows: &[Row],
+    children: &[Vec<usize>],
+    visiting: &mut [bool],
+    emitted: &mut [bool],
+) -> Result<Value> {
+    if visiting[index] {
+        return Err(GraphError::Contract(format!("tree cycle at {}", rows[index]["id"])));
+    }
+    visiting[index] = true;
+    let mut node = row_node(&rows[index])?;
+    if !children[index].is_empty() {
+        let nested = children[index]
+            .iter()
+            .map(|child| build_tree_node(*child, rows, children, visiting, emitted))
+            .collect::<Result<Vec<_>>>()?;
+        node.as_object_mut()
+            .expect("row_node returns an object")
+            .insert("children".into(), Value::Array(nested));
+    }
+    visiting[index] = false;
+    emitted[index] = true;
+    Ok(node)
 }
 
 fn validate_contract(rows: &[Row], required: &[&str]) -> Result<()> {
@@ -50,7 +129,7 @@ fn validate_contract(rows: &[Row], required: &[&str]) -> Result<()> {
             .collect();
         if !missing.is_empty() {
             return Err(GraphError::Contract(format!(
-                "index row {i} is missing required terms: {}",
+                "result row {i} is missing required terms: {}",
                 missing.join(", ")
             )));
         }
@@ -59,6 +138,10 @@ fn validate_contract(rows: &[Row], required: &[&str]) -> Result<()> {
 }
 
 fn index_node(row: &Row) -> Result<Value> {
+    row_node(row)
+}
+
+fn row_node(row: &Row) -> Result<Value> {
     let mut node = Map::new();
     for (term, value) in row {
         let framed = if INTEGER_TERMS.contains(&term.as_str()) {
@@ -185,6 +268,37 @@ mod tests {
         row.insert("source_line".into(), "not-a-number".into());
         let err = frame_index(&[row]).expect_err("must fail");
         assert!(err.to_string().contains("source_line"));
+    }
+
+    #[test]
+    fn tree_rows_nest_under_canonical_parent_identity() {
+        let root = HashMap::from([
+            ("id".into(), "urn:uuid:root".into()),
+            ("name".into(), "Charter".into()),
+            ("kind".into(), "charter".into()),
+        ]);
+        let child = HashMap::from([
+            ("id".into(), "urn:uuid:child".into()),
+            ("parent".into(), "urn:uuid:root".into()),
+            ("name".into(), "Action".into()),
+            ("kind".into(), "action".into()),
+        ]);
+
+        let tree = frame_tree(&[root, child]).expect("tree");
+        assert_eq!(tree[0]["name"], "Charter");
+        assert_eq!(tree[0]["children"][0]["id"], "urn:uuid:child");
+    }
+
+    #[test]
+    fn tree_rejects_missing_parent() {
+        let orphan = HashMap::from([
+            ("id".into(), "urn:uuid:child".into()),
+            ("parent".into(), "urn:uuid:missing".into()),
+            ("name".into(), "Action".into()),
+            ("kind".into(), "action".into()),
+        ]);
+        let error = frame_tree(&[orphan]).expect_err("orphan must fail");
+        assert!(error.to_string().contains("missing parent"));
     }
 
     #[test]

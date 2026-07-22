@@ -124,7 +124,7 @@ pub use query::{
     build_raw_where_query, build_where_query, query_action_ids, query_raw,
     validate_actions_vocabulary,
 };
-pub use shape::{INDEX_REQUIRED, frame_index};
+pub use shape::{INDEX_REQUIRED, TREE_REQUIRED, frame_index, frame_tree};
 
 /// Result type for graph operations.
 pub type Result<T> = std::result::Result<T, GraphError>;

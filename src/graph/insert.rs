@@ -31,17 +31,25 @@ pub fn load_domain_model(
     config: Option<&WorkspaceConfig>,
     graph_name: GraphName,
 ) -> Result<()> {
-    // Build title → UUID map so hasSubCharter triples use the actual charter UUID
-    // rather than re-deriving it (which breaks when explicit .md charters have
-    // their own UUID that differs from the INBOX_CHARTER_NS-derived one).
-    let charter_id_by_title: HashMap<String, Uuid> = model
+    // Build title/alias → UUID map so hasSubCharter triples use the actual
+    // charter UUID. Frontmatter parent references commonly use aliases (for
+    // example `parent: platform`), while explicit charters have UUIDs that
+    // differ from a namespace-derived fallback.
+    let charter_id_by_ref: HashMap<String, Uuid> = model
         .charters
         .iter()
-        .map(|c| (c.title.to_lowercase(), c.id))
+        .flat_map(|charter| {
+            std::iter::once((charter.title.to_lowercase(), charter.id)).chain(
+                charter
+                    .alias
+                    .iter()
+                    .map(|alias| (alias.to_lowercase(), charter.id)),
+            )
+        })
         .collect();
 
     for charter in &model.charters {
-        insert_charter(store, charter, &charter_id_by_title, &graph_name)?;
+        insert_charter(store, charter, &charter_id_by_ref, &graph_name)?;
     }
     for action in model.all_actions() {
         insert_action(store, action, &graph_name)?;
@@ -230,7 +238,7 @@ pub fn load_turtle_into_graph(store: &Store, content: &str, graph_name: GraphNam
 fn insert_charter(
     store: &Store,
     charter: &Charter,
-    charter_id_by_title: &HashMap<String, Uuid>,
+    charter_id_by_ref: &HashMap<String, Uuid>,
     graph_name: &GraphName,
 ) -> Result<()> {
     let subject =
@@ -285,7 +293,7 @@ fn insert_charter(
     }
 
     if let Some(ref parent_title) = charter.parent {
-        let parent_uuid = charter_id_by_title
+        let parent_uuid = charter_id_by_ref
             .get(&parent_title.to_lowercase())
             .copied()
             .unwrap_or_else(|| Uuid::new_v5(&INBOX_CHARTER_NS, parent_title.as_bytes()));

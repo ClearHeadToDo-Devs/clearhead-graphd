@@ -185,6 +185,10 @@ const BUILT_IN_INDEX_QUERIES: &[(&str, &str)] = &[
     ("weekly", include_str!("queries/index/weekly.sparql")),
 ];
 
+const BUILT_IN_TREE_QUERIES: &[(&str, &str)] = &[
+    ("work-map", include_str!("queries/tree/work-map.sparql")),
+];
+
 const BUILT_IN_QUERIES: &[(&str, &str)] = &[
     ("actions-by-phase", include_str!("queries/actions-by-phase.sparql")),
     ("all-plans", include_str!("queries/all-plans.sparql")),
@@ -362,6 +366,45 @@ pub fn run_index(
     }
 }
 
+/// A named tree view: portable SELECT bindings validated as canonical-id and
+/// parent-linked nodes, then projected as nested JSON or an indented terminal
+/// tree.
+pub fn run_tree(
+    cx: &QueryContext,
+    name: Option<&str>,
+    format: Option<Format>,
+) -> anyhow::Result<()> {
+    let name = name.unwrap_or("work-map");
+    let sparql = resolve_typed_queries(cx, "tree")
+        .remove(name)
+        .map(|q| q.sparql)
+        .or_else(|| {
+            BUILT_IN_TREE_QUERIES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, sparql)| sparql.to_string())
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "No tree query named '{name}'. Save a .sparql file to \
+                 <config>/queries/tree/ or <workspace>/.clearhead/queries/tree/"
+            )
+        })?;
+
+    let store = build_store(&cx.workspace, &cx.config)?;
+    let rows = graph::query_raw(&store, &inject_params(&sparql, None, None))
+        .map_err(|e| anyhow!("SPARQL query failed: {e}"))?;
+    let tree = graph::frame_tree(&rows)
+        .map_err(|e| anyhow!("Query result does not satisfy the tree contract: {e}"))?;
+
+    match format.unwrap_or_else(default_index_format) {
+        Format::Table => emit_tree(&tree),
+        Format::Json => write_stdout(&serde_json::to_string_pretty(&tree).context("serialize")?),
+        Format::Ndjson => anyhow::bail!("--format ndjson is not defined for tree queries; use json"),
+        Format::Jsonld => anyhow::bail!("--format jsonld is not defined for tree queries; use json"),
+    }
+}
+
 pub fn list(cx: &QueryContext) -> anyhow::Result<()> {
     use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
     let mut table = Table::new();
@@ -387,6 +430,9 @@ pub fn list(cx: &QueryContext) -> anyhow::Result<()> {
     for (name, _) in BUILT_IN_INDEX_QUERIES {
         table.add_row(vec![Cell::new(name), Cell::new("index"), Cell::new("built-in")]);
     }
+    for (name, _) in BUILT_IN_TREE_QUERIES {
+        table.add_row(vec![Cell::new(name), Cell::new("tree"), Cell::new("built-in")]);
+    }
     let mut typed = scan_all_typed_queries(cx);
     typed.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     for (type_name, name, q) in &typed {
@@ -408,6 +454,13 @@ pub fn show(cx: &QueryContext, name: &str) -> anyhow::Result<()> {
                 .iter()
                 .find(|(n, _)| *n == name)
                 .map(|(_, s)| s.to_string())
+        })
+        .or_else(|| resolve_typed_queries(cx, "tree").remove(name).map(|q| q.sparql))
+        .or_else(|| {
+            BUILT_IN_TREE_QUERIES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, sparql)| sparql.to_string())
         })
         .or_else(|| resolve_named_queries(cx).remove(name).map(|q| q.sparql))
         .ok_or_else(|| {
@@ -436,6 +489,29 @@ fn emit_rows(rows: &[HashMap<String, String>], format: Option<Format>) -> anyhow
             "--format jsonld requires a shaped query family such as `query index`"
         ),
     }
+}
+
+fn emit_tree(tree: &serde_json::Value) -> anyhow::Result<()> {
+    fn visit(node: &serde_json::Value, depth: usize, lines: &mut Vec<String>) {
+        let name = node["name"].as_str().unwrap_or("?");
+        let kind = node["kind"].as_str().unwrap_or("node");
+        let status = node.get("status").and_then(|value| value.as_str());
+        let suffix = status.map(|value| format!(" [{value}]")).unwrap_or_default();
+        lines.push(format!("{}{}: {}{}", "  ".repeat(depth), kind, name, suffix));
+        if let Some(children) = node.get("children").and_then(|value| value.as_array()) {
+            for child in children {
+                visit(child, depth + 1, lines);
+            }
+        }
+    }
+
+    let mut lines = Vec::new();
+    if let Some(roots) = tree.as_array() {
+        for root in roots {
+            visit(root, 0, &mut lines);
+        }
+    }
+    write_stdout_lines(&lines)
 }
 
 fn emit_ndjson(nodes: &[serde_json::Value]) -> anyhow::Result<()> {

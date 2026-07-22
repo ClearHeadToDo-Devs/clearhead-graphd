@@ -42,6 +42,12 @@ enum QueryKind {
         #[arg(long, value_enum)]
         format: Option<clearhead_graphd::query::Format>,
     },
+    /// Run a named tree view (default: "work-map").
+    Tree {
+        name: Option<String>,
+        #[arg(long, value_enum)]
+        format: Option<clearhead_graphd::query::Format>,
+    },
     /// Run a saved freeform query by name.
     Named {
         name: String,
@@ -107,6 +113,7 @@ fn run_query_command(workspace: &Path, args: QueryArgs) -> Result<()> {
             target,
             format,
         } => query::run_index(&cx, name.as_deref(), target.as_deref(), format),
+        QueryKind::Tree { name, format } => query::run_tree(&cx, name.as_deref(), format),
         QueryKind::Named {
             name,
             status,
