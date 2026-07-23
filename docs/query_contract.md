@@ -62,9 +62,12 @@ A graph is a standard `CONSTRUCT` query. Its returned RDF graph is the contract:
 subjects, predicates, and objects preserve their ontology meaning without being
 flattened into an application-specific row schema. Machine output defaults to
 JSON-LD; explicit Turtle is available for standard RDF interchange, and a
-terminal receives a triple/subject/predicate summary. A `SELECT` saved in the
-graph family fails clearly. The built-in `dependencies.sparql` proves the family
-over actions, states, charter membership, and predecessor edges.
+terminal receives a triple/subject/predicate summary. DOT is an explicit
+visualization projection: graphd builds a petgraph network from the CONSTRUCT
+result and serializes it for Graphviz without replacing RDF as the semantic
+contract. A `SELECT` saved in the graph family fails clearly. The built-in
+`dependencies.sparql` proves the family over actions, states, charter membership,
+and predecessor edges.
 
 ## Unrestricted queries
 
@@ -89,8 +92,9 @@ selects human rendering versus machine emission:
 | unrestricted `SELECT` | table | JSON row array |
 
 Explicit format flags override destination detection. `jsonld` preserves the
-semantic document for consumers that need it; `json`, `ndjson`, and `table`
-provide shallower projections where the selected query form supports them.
+semantic document for consumers that need it; `json`, `ndjson`, `dot`, and
+`table` provide shallower projections where the selected query form supports
+them.
 Empty machine results remain valid structured output: no NDJSON records, `[]`
 for JSON rows, or an empty JSON-LD graph.
 

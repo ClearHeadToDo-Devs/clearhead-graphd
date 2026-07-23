@@ -45,6 +45,23 @@ fn dependencies_construct_emits_jsonld_for_machine_default() {
 }
 
 #[test]
+fn dependencies_construct_emits_dot_with_visual_flow() {
+    let env = dependency_workspace();
+    let output = env
+        .command()
+        .args(["query", "graph", "dependencies", "--format", "dot"])
+        .output()
+        .expect("run dependency graph as DOT");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let dot = String::from_utf8(output.stdout).expect("utf8 DOT");
+    assert!(dot.starts_with("digraph"), "{dot}");
+    assert!(dot.contains("prepare"), "{dot}");
+    assert!(dot.contains("ship"), "{dot}");
+    assert!(dot.contains("0 -> 1"), "dependency must flow prepare -> ship: {dot}");
+    assert!(dot.contains("penwidth=\"2\""), "dependency edge styling missing: {dot}");
+}
+
+#[test]
 fn graph_family_rejects_select_queries() {
     let env = dependency_workspace();
     env.write_text(

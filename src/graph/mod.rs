@@ -109,11 +109,13 @@
 //! - [`query`]     — SPARQL query execution and result extraction
 //! - [`jsonld`]    — canonical compact JSON-LD export
 
+pub mod dot;
 pub mod insert;
 pub mod jsonld;
 pub mod query;
 pub mod shape;
 
+pub use dot::frame_dot;
 pub use insert::{
     insert_workspace_metadata, load_domain_model, load_turtle_into_graph,
 };

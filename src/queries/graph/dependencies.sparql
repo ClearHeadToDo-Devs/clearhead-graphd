@@ -11,6 +11,7 @@ CONSTRUCT {
     ?action a actions:Action ;
             rdfs:label ?name ;
             cco:ont00001868 ?status .
+    ?action actions:hasPriority ?priority .
     ?action cco:ont00001775 ?predecessor .
     ?predecessor a actions:Action ;
                  rdfs:label ?predecessor_name ;
@@ -24,6 +25,7 @@ WHERE {
         ?action a actions:Action ;
                 rdfs:label ?name ;
                 cco:ont00001868 ?status .
+        OPTIONAL { ?action actions:hasPriority ?priority }
         OPTIONAL {
             ?action cco:ont00001775 ?predecessor .
             ?predecessor a actions:Action ;

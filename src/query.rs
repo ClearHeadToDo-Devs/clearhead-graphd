@@ -40,6 +40,7 @@ pub enum Format {
     Ndjson,
     Jsonld,
     Turtle,
+    Dot,
 }
 
 fn default_rows_format() -> Format {
@@ -385,7 +386,9 @@ pub fn run_index(
         }
         Format::Ndjson => emit_ndjson(nodes),
         Format::Jsonld => write_stdout(&serde_json::to_string_pretty(&doc).context("serialize")?),
-        Format::Turtle => anyhow::bail!("--format turtle requires a CONSTRUCT graph query"),
+        Format::Turtle | Format::Dot => {
+            anyhow::bail!("--format turtle/dot requires a CONSTRUCT graph query")
+        }
     }
 }
 
@@ -425,7 +428,9 @@ pub fn run_tree(
         Format::Json => write_stdout(&serde_json::to_string_pretty(&tree).context("serialize")?),
         Format::Ndjson => anyhow::bail!("--format ndjson is not defined for tree queries; use json"),
         Format::Jsonld => anyhow::bail!("--format jsonld is not defined for tree queries; use json"),
-        Format::Turtle => anyhow::bail!("--format turtle requires a CONSTRUCT graph query"),
+        Format::Turtle | Format::Dot => {
+            anyhow::bail!("--format turtle/dot requires a CONSTRUCT graph query")
+        }
     }
 }
 
@@ -459,6 +464,7 @@ pub fn run_graph(
         Format::Table => emit_graph_summary(&triples),
         Format::Jsonld => emit_rdf(&triples, RdfFormat::JsonLd { profile: JsonLdProfileSet::empty() }),
         Format::Turtle => emit_rdf(&triples, RdfFormat::Turtle),
+        Format::Dot => write_stdout_raw(graph::frame_dot(&triples).as_bytes()),
         Format::Json | Format::Ndjson => {
             anyhow::bail!("graph queries require an RDF format: use jsonld or turtle")
         }
@@ -555,8 +561,8 @@ fn emit_rows(rows: &[HashMap<String, String>], format: Option<Format>) -> anyhow
             write_stdout_lines(&lines)
         }
         Format::Table => emit_table(rows),
-        Format::Jsonld | Format::Turtle => anyhow::bail!(
-            "RDF formats require a shaped graph query such as `query graph`"
+        Format::Jsonld | Format::Turtle | Format::Dot => anyhow::bail!(
+            "graph formats require a shaped graph query such as `query graph`"
         ),
     }
 }
