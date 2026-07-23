@@ -96,6 +96,39 @@ fn work_map_resolves_charter_parent_by_alias() {
 }
 
 #[test]
+fn work_map_uses_filesystem_hierarchy_for_markdown_only_charters() {
+    let env = TestEnv::new();
+    env.with_workspace_identity();
+    env.write_text(
+        ".clearhead/charters/someday/README.md",
+        "---\nid: 01900000-0000-7000-8000-000000000120\nalias: someday\n---\n# Someday\n",
+    );
+    env.write_text(
+        ".clearhead/charters/someday/agent-surface/README.md",
+        "---\nid: 01900000-0000-7000-8000-000000000121\nalias: agent-surface\n---\n# Agent Surface\n",
+    );
+
+    let output = env
+        .command()
+        .args(["query", "tree", "work-map", "--format", "json"])
+        .output()
+        .expect("run tree query");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let tree: serde_json::Value = serde_json::from_slice(&output.stdout).expect("nested JSON");
+    let someday = tree
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["name"] == "Someday")
+        .expect("someday root");
+    assert_eq!(someday["children"][0]["name"], "Agent Surface");
+    assert_eq!(
+        someday["children"][0]["source_file"],
+        "someday/agent-surface/README.md"
+    );
+}
+
+#[test]
 fn project_tree_query_must_satisfy_contract() {
     let env = TestEnv::new();
     env.with_workspace_identity()
