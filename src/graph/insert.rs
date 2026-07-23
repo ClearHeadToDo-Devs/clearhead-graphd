@@ -118,9 +118,10 @@ fn insert_sequential_chain_edges(
 /// fallback identity ([`Workspace::effective_id`]) so index queries that join
 /// on the workspace node never silently drop their rows.
 ///
-/// Also emits `ws:hasSourceFile` and `ws:hasSourceLine` for each action that
-/// has source metadata. These are workspace-snapshot properties — valid for the
-/// current filesystem state, enabling editor integration (qflist, jump-to-source).
+/// Also emits `ws:hasSourceFile` for each charter Markdown file and
+/// `ws:hasSourceFile`/`ws:hasSourceLine` for each action that has source
+/// metadata. These are workspace-snapshot properties — valid for the current
+/// filesystem state, enabling editor integration (qflist, jump-to-source).
 ///
 /// Call this after [`load_domain_model`].
 pub fn insert_workspace_metadata(
@@ -169,6 +170,23 @@ pub fn insert_workspace_metadata(
     )?;
 
     for charter in &workspace.charters {
+        if let Some(md_file) = charter.md_file.as_deref() {
+            let subject = NamedOrBlankNode::NamedNode(
+                NamedNode::new(format!("urn:uuid:{}", charter.id)).unwrap(),
+            );
+            store
+                .insert(&Quad::new(
+                    subject,
+                    ns(WORKSPACE_NS, "hasSourceFile"),
+                    Literal::new_typed_literal(
+                        md_file.to_string_lossy().as_ref(),
+                        NamedNode::new(format!("{}string", XSD_NS)).unwrap(),
+                    ),
+                    graph_name.clone(),
+                ))
+                .map_err(|e| GraphError::Store(e.to_string()))?;
+        }
+
         // File provenance is a property of the charter's actions file, not of
         // each action — every action here shares this one path.
         let source_file = charter

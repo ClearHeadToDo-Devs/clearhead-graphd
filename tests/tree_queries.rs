@@ -90,7 +90,9 @@ fn work_map_resolves_charter_parent_by_alias() {
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let tree: serde_json::Value = serde_json::from_slice(&output.stdout).expect("nested JSON");
     let root = tree.as_array().unwrap().iter().find(|node| node["name"] == "Root charter").expect("root");
+    assert_eq!(root["source_file"], "root/README.md");
     assert_eq!(root["children"][0]["name"], "Child charter");
+    assert_eq!(root["children"][0]["source_file"], "child/README.md");
 }
 
 #[test]
